@@ -18,6 +18,7 @@ import json
 #                                   'Library_default': 'E:\\Amstrad\\' }
 #      }
 
+
 class MyFrame(wx.Frame):
 
     def __init__(self):
