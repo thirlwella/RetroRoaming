@@ -6,3 +6,5 @@ I have a few really old games that I like to play occasionally using emulators. 
 It makes it easy to create the cmd line you need to run the game and allows you to keep some notes on each game. Written for Windows, it will store this information in the user profile under \AppData\Local\RetroRoaming in two json files one for the location of the emulators and the other for the list of all the games.
 
 There are python dependencies on wx, os, subprocess and json for it to run
+
+![Alt Text](https://img.itch.zone/aW1hZ2UvMTY3MTQ5MC85ODQyMjc1LnBuZw==/original/Jub1T0.png)
