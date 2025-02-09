@@ -7,7 +7,7 @@
 # Done Jan 2025: change order when you add a game, browse to file first then name
 # Done Jan 2025: ability to start a game by double click
 # To Do: allow a game of the same name with a different emulator
-# To Do: Add a default option for an emulator, e.g. screen size for Fuse
+# Done: Add a default option for an emulator, e.g. screen size for Fuse
 #
 # import sys
 import wx
@@ -427,9 +427,21 @@ class MyFrame(wx.Frame):
                     path2 = ''
                 # Destroy the dialog.
                 dlg3.Destroy()
+
+                dlg4 = wx.TextEntryDialog(
+                    self, 'Any default option to add?',
+                    'will be added to the option', '?')
+                # dlg4.SetValue(self.default_option)
+                self.default_option = dlg4.GetValue()
+                if dlg4.ShowModal() == wx.ID_OK:
+                    default_local = dlg4.GetValue()
+                    dlg4.Destroy()
+                else:
+                    default_local = ""
+
                 # Add the new emulator to the dictionary
                 self.emu_dict[emuname] = {'Location': '"' + path + '"',
-                                          'Library_default': path2, 'Default_option': '""'}
+                                          'Library_default': path2, 'Default_option': default_local}
                 self.game_lib = path2
                 # Update the combo box to have the new emulator added and selected
                 self.emulator = list(self.emu_dict.keys())
