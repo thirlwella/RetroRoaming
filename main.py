@@ -15,7 +15,11 @@ import os
 # import wx.dataview as dv
 import subprocess
 import json
+import uuid
 
+myuuid = uuid.uuid4()
+
+print('Your UUID is: ' + str(myuuid))
 
 # File being loaded at the start need to add saving and creating new file if one is not there
 
@@ -298,27 +302,37 @@ class MyFrame(wx.Frame):
             # dlg.SetValue("Python is the best!")
             if dlg.ShowModal() == wx.ID_OK:
                 # self.log.WriteText('You entered: %s\n' % dlg.GetValue())
+
                 gamename = dlg.GetValue()
-                if gamename not in self.games_dict.keys():
-                    self.games_dict[gamename] = {'Application': self.emulator_name, 'Options': '', 'Notes': ''}
-                    self.current_game = gamename
+                if gamename not in self.filtered_game_list:
+
+                    new_index_for_game = str(uuid.uuid4())
+                    # check that UID is not already in user (add later)
+
+                    self.games_dict[new_index_for_game] = {'Game': gamename,
+                                                           'Application': self.emulator_name,
+                                                           'Options': ' "' + path + '" ' + self.default_option, 'Notes': ''}
+
+
+                    #self.games_dict[gamename] = {'Application': self.emulator_name, 'Options': '', 'Notes': ''}
+
 
                     # Update the options
 
-                    options_before = self.games_dict[self.current_game]["Options"]
-                    self.games_dict[self.current_game]["Options"] = options_before + ' "' + path + '" ' + \
-                                                                    self.default_option
+                    #options_before = self.games_dict[self.current_game]["Options"]
+                    #self.games_dict[self.current_game]["Options"] = options_before + ' "' + path + '" ' + \
+                    #                                                self.default_option
                     # update the screen
+                    self.current_game = gamename
                     self.filterthegames(False)
                     # Call the function to add the file (screen needs to update first to select the new game)
                     # self.onfileopen(self)
                     # Update the screen again this time saving the changes
                     self.filterthegames(True)
                 else:
-                    wx.MessageBox(f"The game {gamename} is already used in {self.games_dict[gamename]['Application']}",
+                    wx.MessageBox(f"The game {gamename} is already setup",
                                   "Warning",
                                   wx.OK | wx.ICON_STOP | wx.CENTER)
-
             dlg.Destroy()
         else:
             wx.MessageBox(f"You need to set up an emulator first..",
@@ -329,32 +343,35 @@ class MyFrame(wx.Frame):
         # Edits a record
         #  'sdfsfsfsdfs': {'Application': 'DosBox', 'Options': 'stuff here sdsds'},
         #
+        select_index = self.my_list.GetSelection()
+        self.listed_game = self.choice_of_games[select_index]
+        self.current_game = self.game_index_dict[self.listed_game]
 
         if self.current_game in self.games_dict.keys():
 
-            select_index = self.my_list.GetSelection()
-            self.current_game = self.choice_of_games[select_index]
+
+
+            #self.current_game = self.choice_of_games[select_index]
+
+
             selectoption = self.games_dict[self.current_game]["Options"]
             dlg = wx.TextEntryDialog(
                 self, 'Change the name?',
                 'Edit a game', '?')
-            dlg.SetValue(self.current_game)
+            dlg.SetValue(self.listed_game)
             if dlg.ShowModal() == wx.ID_OK:
                 # self.log.WriteText('You entered: %s\n' % dlg.GetValue())
                 gamename_new = dlg.GetValue()
-                # Need to check if the game name is already used
-                if gamename_new not in self.games_dict.keys():
 
-                    del self.games_dict[self.current_game]
-                    self.games_dict[gamename_new] = {'Application': self.emulator_name,
-                                                     'Options': selectoption, 'Notes': ''}
-                    # current_game = gamename_new
-                    self.filterthegames(True)
-                else:
-                    wx.MessageBox(
-                        f"The game {gamename_new} is already used in {self.games_dict[gamename_new]['Application']}",
-                        "Warning",
-                        wx.OK | wx.ICON_STOP | wx.CENTER)
+                del self.games_dict[self.current_game]
+                new_index_for_game = str(uuid.uuid4())
+                # check that UID is not already in user (add later)
+
+                self.games_dict[new_index_for_game] = {'Game' : gamename_new,
+                                                 'Application': self.emulator_name,
+                                                 'Options': selectoption, 'Notes': ''}
+                self.current_game = gamename_new
+                self.filterthegames(True)
 
             dlg.Destroy()
         else:
@@ -366,7 +383,7 @@ class MyFrame(wx.Frame):
 
         if self.current_game in self.games_dict.keys():
 
-            dlg = wx.MessageDialog(self, f'Do you really want to delete {self.current_game}',
+            dlg = wx.MessageDialog(self, f'Do you really want to delete {self.listed_game}',
                                    'Are you sure?',
                                    # wx.OK | wx.ICON_INFORMATION
                                    wx.OK | wx.CANCEL | wx.ICON_STOP
@@ -535,7 +552,8 @@ class MyFrame(wx.Frame):
                 self.emulator = list(self.emu_dict.keys())
                 # Uses the filtered list of games to change the relevant games dictionary to the new emulator name
                 for x in self.filtered_game_list:
-                    self.games_dict[x]["Application"] = emulator_name_new
+                    y = self.game_index_dict[x]
+                    self.games_dict[y]["Application"] = emulator_name_new
                 # Updates the comb box with the new list of emulator and selects the amended one
                 self.choice_of_emu.Clear()
                 self.emulator.sort()
@@ -571,7 +589,8 @@ class MyFrame(wx.Frame):
                 del self.emu_dict[self.emulator_name]
                 # Steps through the games and removes any related to the emulator from the dictionary
                 for x in self.filtered_game_list:
-                    del self.games_dict[x]
+                    y = self.game_index_dict[x]
+                    del self.games_dict[y]
                 # Updates the comb box with the list of emulators remaining
                 self.choice_of_emu.Clear()
                 self.emulator.remove(self.emulator_name)
@@ -630,7 +649,9 @@ class MyFrame(wx.Frame):
         value = self.emu_location.GetValue()
         if len(self.filtered_game_list) > 0:
             select_index = self.my_list.GetSelection()
-            self.current_game = self.choice_of_games[select_index]
+            #self.current_game = self.choice_of_games[select_index]
+            self.listed_game = self.choice_of_games[select_index]
+            self.current_game = self.game_index_dict[self.listed_game]
             doscmd = value + ' ' + self.games_dict[self.current_game]["Options"]
             # opt = self.games_dict[self.current_game]["Options"]
             # test = value + ',' + self.games_dict[current_game]["Options"]
@@ -644,14 +665,22 @@ class MyFrame(wx.Frame):
                           wx.OK | wx.ICON_STOP | wx.CENTER)
 
     def on_doubleclk(self, event):
-        select_index = self.my_list.GetSelection()
-        self.current_game = self.choice_of_games[select_index]
+        #select_index = self.my_list.GetSelection()
+        #self.current_game = self.choice_of_games[select_index]
+        #self.listed_game = self.choice_of_games[select_index]
+        #self.current_game = self.game_index_dict[self.listed_game]
+
+        #self.run_game(self.current_game)
         self.run_game(self.current_game)
 
     # Needs to be called if you want to change focus to a different game to update the screen
     def on_clk(self, event):
         select_index = self.my_list.GetSelection()
-        self.current_game = self.choice_of_games[select_index]
+        #select_index = self.game_index_dict[select_index]
+
+        self.listed_game = self.choice_of_games[select_index]
+        self.current_game = self.game_index_dict[self.listed_game]
+
 
         # update items related to what has been selected
         # Update details for options
@@ -705,9 +734,11 @@ class MyFrame(wx.Frame):
             self.cmdstring.SetValue('')
 
         self.filtered_game_list = []
+        self.game_index_dict = {}
         for x in self.games_dict.keys():
             if self.games_dict[x]['Application'] == self.emulator_name:
-                self.filtered_game_list.append(x)
+                self.filtered_game_list.append(self.games_dict[x]['Game'])
+                self.game_index_dict.update({self.games_dict[x]['Game'] : x })
         self.filtered_game_list.sort()
 
         if self.current_game in self.filtered_game_list:
