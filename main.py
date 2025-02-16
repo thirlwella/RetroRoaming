@@ -6,8 +6,11 @@
 # Done: Add ability to rename an emulator
 # Done Jan 2025: change order when you add a game, browse to file first then name
 # Done Jan 2025: ability to start a game by double click
-# To Do: allow a game of the same name with a different emulator
+# Done: allow a game of the same name with a different emulator
 # Done: Add a default option for an emulator, e.g. screen size for Fuse
+# To do: add tickbox if emulator needs to have the working directory changed to the
+#        directory that the exe is located.
+# To do: Update 'onedit' to show the game name not the UID
 #
 # import sys
 import wx
@@ -17,9 +20,6 @@ import subprocess
 import json
 import uuid
 
-myuuid = uuid.uuid4()
-
-print('Your UUID is: ' + str(myuuid))
 
 # File being loaded at the start need to add saving and creating new file if one is not there
 
@@ -656,7 +656,10 @@ class MyFrame(wx.Frame):
             # opt = self.games_dict[self.current_game]["Options"]
             # test = value + ',' + self.games_dict[current_game]["Options"]
             # subprocess.run([doscmd, '-conf', 'E:\\Dos\\dosboxconf\\doom2-0.74-3.conf', opt])
-            subprocess.run(doscmd)
+            # old method
+            # subprocess.run(doscmd)
+            # New method allows a change of working directory needed for application
+            subprocess.Popen(doscmd, cwd="C:\Program Files (x86)\emulators\Caprice\cap32-win32")
             # subprocess.run('"E:\\Program Files (x86)\\DOSBox-0.74-3\\DOSBox.exe"
             # -conf "E:\\Dos\\dosboxconf\\doom2-0.74-3.conf" "E:\Dos\DosGames\DOOM2\DOOM2.EXE"')
         else:
