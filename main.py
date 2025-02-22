@@ -8,9 +8,8 @@
 # Done Jan 2025: ability to start a game by double click
 # Done: allow a game of the same name with a different emulator
 # Done: Add a default option for an emulator, e.g. screen size for Fuse
-# To do: add tickbox if emulator needs to have the working directory changed to the
-#        directory that the exe is located.
-# To do: Update 'onedit' to show the game name not the UID
+# To do: add change working directory option.
+# Done: Update 'onedit' to show the game name not the UID
 #
 # import sys
 import wx
@@ -36,7 +35,7 @@ import uuid
 class MyFrame(wx.Frame):
 
     def __init__(self):
-        super().__init__(parent=None, title='Retro Roaming', size=(960, 600))
+        super().__init__(parent=None, title='Retro Roaming', size=(1200, 800))
         panel = wx.Panel(self)
         self.statusbar = self.CreateStatusBar(1)
         # Frame uses 3 sizers
@@ -95,6 +94,7 @@ class MyFrame(wx.Frame):
         self.current_game = ''
         self.run_syntax = ''
         self.default_option = ''
+        self.working_directory = ''
         # Needs to move to json file, how will it work if this is the first record, need ability to add a game first
         # self.games_dict = {'Doom': {'Application': 'DosBox',
         #                'Options':' -conf "E:\\Dos\\dosboxconf\\doom2-0.74-3.conf" "E:\Dos\DosGames\DOOM2\DOOM2.EXE"'},
@@ -114,6 +114,7 @@ class MyFrame(wx.Frame):
         self.my_list = wx.ListBox(panel, 1, choices=list(self.choice_of_games), style=wx.LB_SINGLE)
         # self.param_1_type = wx.TextCtrl(panel, style=wx.TE_READONLY)
         self.runoptions = wx.TextCtrl(panel, 1, style=wx.TE_MULTILINE)
+        self.cwd = wx.TextCtrl(panel, 1, self.working_directory, style=wx.TE_READONLY)
         self.default = wx.TextCtrl(panel, 1, style=wx.TE_READONLY)
         self.gamenotes = wx.TextCtrl(panel, 1, style=wx.TE_MULTILINE)
         self.emu_location = wx.TextCtrl(panel, 1, self.dosbox_loc, style=wx.TE_READONLY)
@@ -126,7 +127,6 @@ class MyFrame(wx.Frame):
                                          size=wx.DefaultSize,
                                          choices=self.emulator,
                                          style=wx.TE_READONLY)
-
         self.my_list.Bind(wx.EVT_LISTBOX_DCLICK, self.on_doubleclk)
         self.my_list.Bind(wx.EVT_LISTBOX, self.on_clk)
         self.choice_of_emu.Bind(wx.EVT_TEXT, self.filterchange)
@@ -153,17 +153,22 @@ class MyFrame(wx.Frame):
         my_sizer2.Add(wx.StaticText(panel, -1, "Emulator Selected : "), 0, wx.ALL | wx.EXPAND, 5)
         my_sizer2.Add(self.choice_of_emu, 0, wx.ALL | wx.EXPAND, 5)
         my_sizer2.Add(wx.StaticText(panel, -1, "Location of emulator executable: "), 0, wx.ALL | wx.EXPAND, 5)
-        # my_sizer2.Add(self.param_1_type, 0, wx.ALL | wx.EXPAND, 5)
         my_sizer2.Add(self.emu_location, 0, wx.ALL | wx.EXPAND, 5)
+        # my_sizer2.Add(self.param_1_type, 0, wx.ALL | wx.EXPAND, 5)
+        # added Feb 2025
+        my_sizer2.Add(wx.StaticText(panel, -1, "Working Directory : "), 0, wx.ALL | wx.EXPAND, 5)
+        my_sizer2.Add(self.cwd, 0, wx.ALL | wx.EXPAND, 5)
+        #
         my_sizer2.Add(wx.StaticText(panel, -1, "Default Game Library Location : "), 0, wx.ALL | wx.EXPAND, 5)
         my_sizer2.Add(self.game_location, 0, wx.ALL | wx.EXPAND, 5)
-        # added Feb 2025
-        my_sizer2.Add(wx.StaticText(panel, -1, "Common options to add to new game (if any): "),
-                      0, wx.ALL | wx.EXPAND, 5)
-        my_sizer2.Add(self.default, 0, wx.LEFT | wx.EXPAND, 5)
         #
         my_sizer2.Add(wx.StaticText(panel, -1, "Parameters passed to executable: "), 0, wx.ALL | wx.EXPAND, 5)
         my_sizer2.Add(self.runoptions, 0, wx.ALL | wx.EXPAND, 5)
+        # added Feb 2025
+        my_sizer2.Add(wx.StaticText(panel, -1, "Default option added to new games: "),
+                      0, wx.ALL | wx.EXPAND, 5)
+        #
+        my_sizer2.Add(self.default, 0, wx.LEFT | wx.EXPAND, 5)
         my_sizer2.Add(wx.StaticText(panel, -1, "Notes on how to play: "), 0, wx.ALL | wx.EXPAND, 5)
         my_sizer2.Add(self.gamenotes, 2, wx.ALL | wx.EXPAND, 5)
 
@@ -311,7 +316,8 @@ class MyFrame(wx.Frame):
 
                     self.games_dict[new_index_for_game] = {'Game': gamename,
                                                            'Application': self.emulator_name,
-                                                           'Options': ' "' + path + '" ' + self.default_option, 'Notes': ''}
+                                                           'Options': ' "' + path + '" ' + self.default_option,
+                                                           'Notes': ''}
 
 
                     #self.games_dict[gamename] = {'Application': self.emulator_name, 'Options': '', 'Notes': ''}
@@ -369,7 +375,8 @@ class MyFrame(wx.Frame):
 
                 self.games_dict[new_index_for_game] = {'Game' : gamename_new,
                                                  'Application': self.emulator_name,
-                                                 'Options': selectoption, 'Notes': ''}
+                                                 'Options': selectoption,
+                                                 'Notes': self.gamenotes.Value}
                 self.current_game = gamename_new
                 self.filterthegames(True)
 
@@ -659,7 +666,7 @@ class MyFrame(wx.Frame):
             # old method
             # subprocess.run(doscmd)
             # New method allows a change of working directory needed for application
-            subprocess.Popen(doscmd, cwd="C:\Program Files (x86)\emulators\Caprice\cap32-win32")
+            subprocess.Popen(doscmd, cwd=self.working_directory)
             # subprocess.run('"E:\\Program Files (x86)\\DOSBox-0.74-3\\DOSBox.exe"
             # -conf "E:\\Dos\\dosboxconf\\doom2-0.74-3.conf" "E:\Dos\DosGames\DOOM2\DOOM2.EXE"')
         else:
@@ -690,8 +697,9 @@ class MyFrame(wx.Frame):
         # self.param_1_type.SetValue(self.games_dict[current_game]['Application'])
         self.runoptions.SetValue(self.games_dict[self.current_game]['Options'])
         self.gamenotes.SetValue(self.games_dict[self.current_game]['Notes'])
-        cmd = self.dosbox_loc + ' ' + self.games_dict[self.current_game]['Options']
-        self.cmdstring.SetValue(cmd)
+        #cmd = self.dosbox_loc + ' ' + self.games_dict[self.current_game]['Options']
+        #self.cmdstring.SetValue(cmd)
+        self.cmdstring.SetValue(self.dosbox_loc + ' ' + self.games_dict[self.current_game]['Options'])
 
     def filterchange(self, event):
         emuselected_index = self.choice_of_emu.GetSelection()
@@ -728,6 +736,8 @@ class MyFrame(wx.Frame):
             self.game_lib = self.emu_dict[self.emulator[emuselected_index]]['Library_default']
             self.default.SetValue(self.emu_dict[self.emulator[emuselected_index]]['Default_option'])
             self.default_option = self.emu_dict[self.emulator[emuselected_index]]['Default_option']
+            self.cwd.SetValue(self.emu_dict[self.emulator[emuselected_index]]['Working_Directory'])
+            self.working_directory = self.emu_dict[self.emulator[emuselected_index]]['Working_Directory']
 
             # Saving the data to disk
 
@@ -772,10 +782,10 @@ class MyFrame(wx.Frame):
             updatednotes = self.gamenotes.Value
             self.games_dict[self.current_game]["Options"] = updated
             self.games_dict[self.current_game]["Notes"] = updatednotes
-            cmd = self.dosbox_loc + ' ' + self.games_dict[self.current_game]['Options']
-            self.cmdstring.SetValue(cmd)
-            self.filterthegames(True)
-            dlg = wx.MessageDialog(self, f'Option updated for {self.current_game}',
+            self.cmdstring.SetValue(self.dosbox_loc + ' ' + self.games_dict[self.current_game]['Options'])
+            #self.filterthegames(True)
+            #self.current_game = self.game_index_dict[self.current_game]
+            dlg = wx.MessageDialog(self, f'Option updated for {self.listed_game}',
                                    'Done',
                                    # wx.OK | wx.ICON_INFORMATION
                                    wx.OK | wx.ICON_INFORMATION
