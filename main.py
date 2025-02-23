@@ -432,6 +432,7 @@ class MyFrame(wx.Frame):
                     # load directory
                     path = dlg2.GetPath()
                     self.dosbox_loc = path
+                    self.working_directory = dlg2.GetDirectory()
                 else:
                     path = ''
                 # Destroy the dialog.
@@ -465,7 +466,9 @@ class MyFrame(wx.Frame):
 
                 # Add the new emulator to the dictionary
                 self.emu_dict[emuname] = {'Location': '"' + path + '"',
-                                          'Library_default': path2, 'Default_option': default_local}
+                                          'Library_default': path2,
+                                          'Default_option': default_local,
+                                          'Working_Directory': self.working_directory}
                 self.game_lib = path2
                 # Update the combo box to have the new emulator added and selected
                 self.emulator = list(self.emu_dict.keys())
@@ -511,6 +514,7 @@ class MyFrame(wx.Frame):
                     # load directory
                     path = dlg2.GetPath()
                     self.dosbox_loc = path
+                    self.working_directory = dlg2.GetDirectory()
                 else:
                     path = ''
                 # Destroy the dialog.
@@ -553,8 +557,10 @@ class MyFrame(wx.Frame):
                 # Deletes the details with the old name
                 del self.emu_dict[self.emulator_name]
                 # Adds it with the new name
-                self.emu_dict[emulator_name_new] = {'Location': path, 'Library_default': path2,
-                                                    'Default_option': default_local}
+                self.emu_dict[emulator_name_new] = {'Location': path,
+                                                    'Library_default': path2,
+                                                    'Default_option': default_local,
+                                                    'Working_Directory': self.working_directory}
                 # emulator hold a list of the emulators, needs to be refreshed
                 self.emulator = list(self.emu_dict.keys())
                 # Uses the filtered list of games to change the relevant games dictionary to the new emulator name
