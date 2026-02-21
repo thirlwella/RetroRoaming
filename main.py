@@ -1,90 +1,70 @@
 #
 # Retro Roaming written by Adam Thirlwell June 2021
 # Update Nov 2023 - add status bar details 1.01
+# Update Feb 2026 - code cleanup and robustness improvements
 #
-# Done: Add ability to rename a game
-# Done: Add ability to rename an emulator
-# Done Jan 2025: change order when you add a game, browse to file first then name
-# Done Jan 2025: ability to start a game by double click
-# Done: allow a game of the same name with a different emulator
-# Done: Add a default option for an emulator, e.g. screen size for Fuse
-# To do: add change working directory option.
-# Done: Update 'onedit' to show the game name not the UID
-#
-# import sys
 import wx
 import os
-# import wx.dataview as dv
 import subprocess
 import json
 import uuid
 
 
-# File being loaded at the start need to add saving and creating new file if one is not there
+class DataManager:
+    def __init__(self):
+        self.datastorelocation = os.path.join(os.getenv("USERPROFILE", ""), "AppData", "Local", "RetroRoaming")
+        if not os.path.exists(self.datastorelocation):
+            try:
+                os.makedirs(self.datastorelocation)
+            except OSError as e:
+                wx.MessageBox(f"Could not create data directory: {e}", "Error", wx.OK | wx.ICON_ERROR)
 
+        self.emu_file = os.path.join(self.datastorelocation, 'emu_data.json')
+        self.game_file = os.path.join(self.datastorelocation, 'games_data.json')
+        self.emu_dict = {}
+        self.games_dict = {}
+        self.load_data()
 
-# emu_dict = {'DosBox': {'Location': '"E:\\Program Files (x86)\\DOSBox-0.74-3\\DOSBox.exe"',
-#                                       'Library_default': 'E:\\Dos\\DosGames\\'},
-#          'ZXSpectrum': {'Location': '"E:\\Program Files (x86)\\Fuse\\Fuse.exe"',
-#                                     'Library_default': 'E:\\Dos\\DosGames\\Emu\\Speccy\\Games'},
-#        'AmstradCPC':{'Location': '"E:\\Amstrad\\CpcLoad\\cpcload.exe"',
-#                                   'Library_default': 'E:\\Amstrad\\' }
-#      }
+    def load_data(self):
+        if os.path.isfile(self.emu_file):
+            try:
+                with open(self.emu_file, 'r') as ef:
+                    self.emu_dict = json.load(ef)
+            except (json.JSONDecodeError, IOError) as e:
+                wx.MessageBox(f"Error loading emulator data: {e}", "Error", wx.OK | wx.ICON_ERROR)
+
+        if os.path.isfile(self.game_file):
+            try:
+                with open(self.game_file, 'r') as gf:
+                    self.games_dict = json.load(gf)
+            except (json.JSONDecodeError, IOError) as e:
+                wx.MessageBox(f"Error loading game data: {e}", "Error", wx.OK | wx.ICON_ERROR)
+
+    def save_data(self):
+        try:
+            with open(self.emu_file, 'w') as ef:
+                json.dump(self.emu_dict, ef, indent=4)
+            with open(self.game_file, 'w') as gf:
+                json.dump(self.games_dict, gf, indent=4)
+        except IOError as e:
+            wx.MessageBox(f"Error saving data: {e}", "Error", wx.OK | wx.ICON_ERROR)
 
 
 class MyFrame(wx.Frame):
 
     def __init__(self):
         super().__init__(parent=None, title='Retro Roaming', size=(1200, 800))
+        self.data_manager = DataManager()
+        self.emu_dict = self.data_manager.emu_dict
+        self.games_dict = self.data_manager.games_dict
+
         panel = wx.Panel(self)
         self.statusbar = self.CreateStatusBar(1)
-        # Frame uses 3 sizers
-        my_sizer = wx.BoxSizer(wx.HORIZONTAL)
-        my_sizer2 = wx.BoxSizer(wx.VERTICAL)
-        my_sizer3 = wx.BoxSizer(wx.HORIZONTAL)
 
-        # Set up button details will be added to my_sizer3
-        my_btn = wx.Button(panel, label='Play Game', size=(100, 30))
-        my_btn.Bind(wx.EVT_BUTTON, self.run_game)
-        my_btn_edit = wx.Button(panel, label='Update', size=(100, 30))
-        my_btn_edit.Bind(wx.EVT_BUTTON, self.onedit)
-        my_btn_exit = wx.Button(panel, label='Exit', size=(100, 30))
-        my_btn_exit.Bind(wx.EVT_BUTTON, self.on_exit)
-
-        # Set up the variables to be used
-        # with open('emulist.json', 'w') as fp:
-        #   json.dump(emu_dict, fp,  indent=4)
-
-        # Need to load the data saved to your profile, if it is already there
-        # If the directory does not exist then create it
-        self.datastorelocation = os.getenv("USERPROFILE") + '\\AppData\\Local\\RetroRoaming\\'
-        if not os.path.exists(self.datastorelocation):
-            os.makedirs(self.datastorelocation)
-        # These are the 2 data files the program needs. Details of Emulators and Games
-        self.emu_file = self.datastorelocation + 'emu_data.json'
-        self.game_file = self.datastorelocation + 'games_data.json'
-        # Defines this as blank dictionaries for when the files don't exist
-        self.emu_dict = {}
-        self.games_dict = {}
-        # Checks to see if the json files are there and loads them if they are
-        if not os.path.isfile(self.emu_file):
-            wx.MessageBox(f"No data files found in your profile, new ones will be created in {self.datastorelocation}",
-                          "No files found",
-                          wx.OK | wx.CENTER)
-        else:
-            self.emu_dict = json.load(open(self.emu_file, 'r'))
-            if not os.path.isfile(self.game_file):
-                wx.MessageBox(
-                    f"Game file is missing for some reason.. {self.datastorelocation}",
-                    "No Games file found",
-                    wx.OK | wx.CENTER)
-            else:
-                self.games_dict = json.load(open(self.game_file, 'r'))
         # Gets a list of the emulators and picks the first one
-        self.emulator = list(self.emu_dict.keys())
-        if len(self.emulator) > 0:
-            self.emulator.sort()
-            self.emulator_name = next(iter(self.emu_dict.keys()))
+        self.emulator = sorted(list(self.emu_dict.keys()))
+        if self.emulator:
+            self.emulator_name = self.emulator[0]
         else:
             self.emulator_name = ''
 
@@ -95,99 +75,73 @@ class MyFrame(wx.Frame):
         self.run_syntax = ''
         self.default_option = ''
         self.working_directory = ''
-        # Needs to move to json file, how will it work if this is the first record, need ability to add a game first
-        # self.games_dict = {'Doom': {'Application': 'DosBox',
-        #                'Options':' -conf "E:\\Dos\\dosboxconf\\doom2-0.74-3.conf" "E:\Dos\DosGames\DOOM2\DOOM2.EXE"'},
-        #                   'Lemmings': {'Application': 'DosBox',
-        #                                'Options': '"E:\\Dos\\DosGames\\Lemmings\\LEMVGA.COM"'},
-        #                   'sdfsfsfsdfs': {'Application': 'DosBox', 'Options': 'stuff here sdsds'},
-        #                   'Manic Miner': {'Application': 'ZXSpectrum',
-        #                                   'Options': '"E:\Dos\DosGames\Emu\Speccy\Games\Manic.z80" -g 3x'},
-        #                   'Jetpac': {'Application': 'ZXSpectrum',
-        #                              'Options': '"E:\Dos\DosGames\Emu\Speccy\Games\Jetpac.z80" -g 3x'},
-        #                   'Games Library': {'Application': 'AmstradCPC', 'Options': '--explorer --max'}
-        #                   }
-        # select just the games for the emulator selected
         self.filtered_game_list = []
+        self.game_index_dict = {}
 
-        self.choice_of_games = self.filtered_game_list
-        self.my_list = wx.ListBox(panel, 1, choices=list(self.choice_of_games), style=wx.LB_SINGLE)
-        # self.param_1_type = wx.TextCtrl(panel, style=wx.TE_READONLY)
-        self.runoptions = wx.TextCtrl(panel, 1, style=wx.TE_MULTILINE)
-        self.cwd = wx.TextCtrl(panel, 1, self.working_directory, style=wx.TE_READONLY)
-        self.default = wx.TextCtrl(panel, 1, style=wx.TE_READONLY)
-        self.gamenotes = wx.TextCtrl(panel, 1, style=wx.TE_MULTILINE)
-        self.emu_location = wx.TextCtrl(panel, 1, self.dosbox_loc, style=wx.TE_READONLY)
-        self.game_location = wx.TextCtrl(panel, 1, self.game_lib, style=wx.TE_READONLY)
-        self.cmdstring = wx.TextCtrl(panel, 1, self.run_syntax, style=wx.TE_READONLY | wx.TE_MULTILINE)
-        # change colour of text
+        # UI Elements
+        self.my_list = wx.ListBox(panel, style=wx.LB_SINGLE)
+        self.runoptions = wx.TextCtrl(panel, style=wx.TE_MULTILINE)
+        self.cwd = wx.TextCtrl(panel, style=wx.TE_READONLY)
+        self.default = wx.TextCtrl(panel, style=wx.TE_READONLY)
+        self.gamenotes = wx.TextCtrl(panel, style=wx.TE_MULTILINE)
+        self.emu_location = wx.TextCtrl(panel, style=wx.TE_READONLY)
+        self.game_location = wx.TextCtrl(panel, style=wx.TE_READONLY)
+        self.cmdstring = wx.TextCtrl(panel, style=wx.TE_READONLY | wx.TE_MULTILINE)
         self.cmdstring.SetForegroundColour((0, 255, 0))
         self.cmdstring.SetBackgroundColour((0, 0, 0))
-        self.choice_of_emu = wx.ComboBox(panel,
-                                         size=wx.DefaultSize,
-                                         choices=self.emulator,
-                                         style=wx.TE_READONLY)
+
+        self.choice_of_emu = wx.ComboBox(panel, choices=self.emulator, style=wx.CB_READONLY)
+
+        # Buttons
+        my_btn = wx.Button(panel, label='Play Game', size=(100, 30))
+        my_btn_edit = wx.Button(panel, label='Update', size=(100, 30))
+        my_btn_exit = wx.Button(panel, label='Exit', size=(100, 30))
+
+        # Bindings
+        my_btn.Bind(wx.EVT_BUTTON, self.run_game)
+        my_btn_edit.Bind(wx.EVT_BUTTON, self.onedit)
+        my_btn_exit.Bind(wx.EVT_BUTTON, self.on_exit)
         self.my_list.Bind(wx.EVT_LISTBOX_DCLICK, self.on_doubleclk)
         self.my_list.Bind(wx.EVT_LISTBOX, self.on_clk)
-        self.choice_of_emu.Bind(wx.EVT_TEXT, self.filterchange)
+        self.choice_of_emu.Bind(wx.EVT_COMBOBOX, self.filterchange)
 
-        # Get the screen to update with the first selected of the first emulator and game when opened
-        self.choice_of_emu.SetValue(self.emulator_name)
+        # Layout
+        main_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        right_sizer = wx.BoxSizer(wx.VERTICAL)
+        button_sizer = wx.BoxSizer(wx.HORIZONTAL)
+
+        main_sizer.Add(self.my_list, 1, wx.EXPAND | wx.ALL, 5)
+        main_sizer.Add(right_sizer, 2, wx.EXPAND | wx.ALL, 5)
+
+        right_sizer.Add(wx.StaticText(panel, label="Emulator Selected:"), 0, wx.ALL, 5)
+        right_sizer.Add(self.choice_of_emu, 0, wx.EXPAND | wx.ALL, 5)
+        right_sizer.Add(wx.StaticText(panel, label="Location of emulator executable:"), 0, wx.ALL, 5)
+        right_sizer.Add(self.emu_location, 0, wx.EXPAND | wx.ALL, 5)
+        right_sizer.Add(wx.StaticText(panel, label="Working Directory:"), 0, wx.ALL, 5)
+        right_sizer.Add(self.cwd, 0, wx.EXPAND | wx.ALL, 5)
+        right_sizer.Add(wx.StaticText(panel, label="Default Game Library Location:"), 0, wx.ALL, 5)
+        right_sizer.Add(self.game_location, 0, wx.EXPAND | wx.ALL, 5)
+        right_sizer.Add(wx.StaticText(panel, label="Parameters passed to executable:"), 0, wx.ALL, 5)
+        right_sizer.Add(self.runoptions, 0, wx.EXPAND | wx.ALL, 5)
+        right_sizer.Add(wx.StaticText(panel, label="Default option added to new games:"), 0, wx.ALL, 5)
+        right_sizer.Add(self.default, 0, wx.EXPAND | wx.ALL, 5)
+        right_sizer.Add(wx.StaticText(panel, label="Notes on how to play:"), 0, wx.ALL, 5)
+        right_sizer.Add(self.gamenotes, 1, wx.EXPAND | wx.ALL, 5)
+        right_sizer.Add(wx.StaticText(panel, label="This will run at command prompt:"), 0, wx.ALL, 5)
+        right_sizer.Add(self.cmdstring, 0, wx.EXPAND | wx.ALL, 5)
+
+        button_sizer.Add(my_btn, 0, wx.ALL, 5)
+        button_sizer.Add(my_btn_edit, 0, wx.ALL, 5)
+        button_sizer.Add(my_btn_exit, 0, wx.ALL, 5)
+        right_sizer.Add(button_sizer, 0, wx.CENTER)
+
+        panel.SetSizer(main_sizer)
+
+        # Initialize UI state
+        if self.emulator_name:
+            self.choice_of_emu.SetValue(self.emulator_name)
         self.filterthegames(False)
-        #
-        # self.choice_of_emu.SetSelection(1)
-        # self.filterthegames(1)
-        # self.my_list.SetSelection(1)
-        # self.on_clk(self.my_list.SetSelection(1))
 
-        # my_sizer.AddSpacer(20)
-        # panel.SetSizer(my_sizer)
-
-        my_sizer.Add(self.my_list,
-                     1,  # make vertically stretchable (ratio)
-                     wx.EXPAND |  # make horizontally stretchable
-                     wx.ALL,  # and make border all around
-                     5)  # set border width
-
-        my_sizer.Add(my_sizer2, 1, wx.ALL | wx.EXPAND, 5)
-        my_sizer2.Add(wx.StaticText(panel, -1, "Emulator Selected : "), 0, wx.ALL | wx.EXPAND, 5)
-        my_sizer2.Add(self.choice_of_emu, 0, wx.ALL | wx.EXPAND, 5)
-        my_sizer2.Add(wx.StaticText(panel, -1, "Location of emulator executable: "), 0, wx.ALL | wx.EXPAND, 5)
-        my_sizer2.Add(self.emu_location, 0, wx.ALL | wx.EXPAND, 5)
-        # my_sizer2.Add(self.param_1_type, 0, wx.ALL | wx.EXPAND, 5)
-        # added Feb 2025
-        my_sizer2.Add(wx.StaticText(panel, -1, "Working Directory : "), 0, wx.ALL | wx.EXPAND, 5)
-        my_sizer2.Add(self.cwd, 0, wx.ALL | wx.EXPAND, 5)
-        #
-        my_sizer2.Add(wx.StaticText(panel, -1, "Default Game Library Location : "), 0, wx.ALL | wx.EXPAND, 5)
-        my_sizer2.Add(self.game_location, 0, wx.ALL | wx.EXPAND, 5)
-        #
-        my_sizer2.Add(wx.StaticText(panel, -1, "Parameters passed to executable: "), 0, wx.ALL | wx.EXPAND, 5)
-        my_sizer2.Add(self.runoptions, 0, wx.ALL | wx.EXPAND, 5)
-        # added Feb 2025
-        my_sizer2.Add(wx.StaticText(panel, -1, "Default option added to new games: "),
-                      0, wx.ALL | wx.EXPAND, 5)
-        #
-        my_sizer2.Add(self.default, 0, wx.LEFT | wx.EXPAND, 5)
-        my_sizer2.Add(wx.StaticText(panel, -1, "Notes on how to play: "), 0, wx.ALL | wx.EXPAND, 5)
-        my_sizer2.Add(self.gamenotes, 2, wx.ALL | wx.EXPAND, 5)
-
-        # self.text_ctrl.SetValue('Blimey')
-        # my_sizer2.Add(wx.StaticText(panel, -1, "Games:"), 0, wx.ALL | wx.CENTER, 5)
-
-        my_sizer2.Add(wx.StaticText(panel, -1, "This will run at command prompt : "),
-                      0,  # horizontally stretchable (ratio)
-                      wx.ALL |  # Border all around
-                      wx.EXPAND,  # vertically stretchable (can add more if wanted using "|")
-                      5)  # size of border
-        my_sizer2.Add(self.cmdstring, 0, wx.ALL | wx.EXPAND, 5)
-        my_sizer2.Add(my_sizer3, 0, wx.ALL | wx.CENTER, 5)
-        my_sizer3.Add(my_btn, 0, wx.ALL | wx.CENTER, 5)
-        my_sizer3.Add(my_btn_edit, 0, wx.ALL | wx.CENTER, 5)
-        my_sizer3.Add(my_btn_exit, 0, wx.ALL | wx.CENTER, 5)
-        panel.SetSizer(my_sizer)
-
-        # create a menu bar
         self.make_menu_bar()
         self.Show()
 
@@ -272,481 +226,254 @@ class MyFrame(wx.Frame):
 
     def onabout(self, event):
         """Display an About Dialog"""
-        wx.MessageBox("Retro Roaming, allowing you to run and organise your games."
-                      "\r\rAdam Thirlwell (thirlwella@gmail.com)\r\r version 1.1",
+        wx.MessageBox("Retro Roaming, allowing you to run and organise your games.\n\n"
+                      "Written by Adam Thirlwell (thirlwella@gmail.com)\n"
+                      "Updated Feb 2026 by Junie",
                       "About Retro Roaming",
                       wx.OK | wx.ICON_INFORMATION | wx.CENTER)
 
     def addgame(self, event):
-        # Adds a record to the list using current view
-        #  'sdfsfsfsdfs': {'Application': 'DosBox', 'Options': 'stuff here sdsds'},
-        #
+        if not self.emulator_name:
+            wx.MessageBox("You need to set up an emulator first.", "Warning", wx.OK | wx.ICON_STOP | wx.CENTER)
+            return
 
-        if len(self.emulator) > 0:
-            # select the game file.
-            dlg = wx.FileDialog(
-                self, message="Select game executable",
-                # defaultPath= os.getenv("USERPROFILE"),
-                defaultDir=self.game_lib,
-                style=wx.DD_DEFAULT_STYLE)
+        with wx.FileDialog(self, "Select game executable", defaultDir=self.game_lib,
+                           style=wx.FD_OPEN | wx.FD_FILE_MUST_EXIST) as file_dlg:
+            if file_dlg.ShowModal() == wx.ID_CANCEL:
+                return
+            path = file_dlg.GetPath()
 
-            # Show the dialog and retrieve the user response.
-            if dlg.ShowModal() == wx.ID_OK:
-                # load directory
-                path = dlg.GetPath()
+        with wx.TextEntryDialog(self, 'Name of the game?', 'Add a game') as name_dlg:
+            if name_dlg.ShowModal() == wx.ID_OK:
+                gamename = name_dlg.GetValue()
+                if any(details['Game'] == gamename and details['Application'] == self.emulator_name 
+                       for details in self.games_dict.values()):
+                    wx.MessageBox(f"The game '{gamename}' is already setup for this emulator.", "Warning", wx.OK | wx.ICON_STOP | wx.CENTER)
+                    return
 
-            else:
-                path = ''
-
-                # Destroy the dialog.
-            dlg.Destroy()
-            # Update the screen again this time saving the changes
-            dlg = wx.TextEntryDialog(
-                self, 'Name of the games is?',
-                'Add a game', '?')
-            # dlg.SetValue("Python is the best!")
-            if dlg.ShowModal() == wx.ID_OK:
-                # self.log.WriteText('You entered: %s\n' % dlg.GetValue())
-
-                gamename = dlg.GetValue()
-                if gamename not in self.filtered_game_list:
-
-                    new_index_for_game = str(uuid.uuid4())
-                    # check that UID is not already in user (add later)
-
-                    self.games_dict[new_index_for_game] = {'Game': gamename,
-                                                           'Application': self.emulator_name,
-                                                           'Options': ' "' + path + '" ' + self.default_option,
-                                                           'Notes': ''}
-
-
-                    #self.games_dict[gamename] = {'Application': self.emulator_name, 'Options': '', 'Notes': ''}
-
-
-                    # Update the options
-
-                    #options_before = self.games_dict[self.current_game]["Options"]
-                    #self.games_dict[self.current_game]["Options"] = options_before + ' "' + path + '" ' + \
-                    #                                                self.default_option
-                    # update the screen
-                    self.current_game = gamename
-                    self.filterthegames(False)
-                    # Call the function to add the file (screen needs to update first to select the new game)
-                    # self.onfileopen(self)
-                    # Update the screen again this time saving the changes
-                    self.filterthegames(True)
-                else:
-                    wx.MessageBox(f"The game {gamename} is already setup",
-                                  "Warning",
-                                  wx.OK | wx.ICON_STOP | wx.CENTER)
-            dlg.Destroy()
-        else:
-            wx.MessageBox(f"You need to set up an emulator first..",
-                          "Warning",
-                          wx.OK | wx.ICON_STOP | wx.CENTER)
+                new_id = str(uuid.uuid4())
+                self.games_dict[new_id] = {
+                    'Game': gamename,
+                    'Application': self.emulator_name,
+                    'Options': f' "{path}" {self.default_option}',
+                    'Notes': ''
+                }
+                self.current_game = new_id
+                self.filterthegames(True)
 
     def editgame(self, event):
-        # Edits a record
-        #  'sdfsfsfsdfs': {'Application': 'DosBox', 'Options': 'stuff here sdsds'},
-        #
-        select_index = self.my_list.GetSelection()
-        self.listed_game = self.choice_of_games[select_index]
-        self.current_game = self.game_index_dict[self.listed_game]
+        if not self.current_game or self.current_game not in self.games_dict:
+            wx.MessageBox("Nothing to edit", "Warning", wx.OK | wx.ICON_STOP | wx.CENTER)
+            return
 
-        if self.current_game in self.games_dict.keys():
-
-
-
-            #self.current_game = self.choice_of_games[select_index]
-
-
-            selectoption = self.games_dict[self.current_game]["Options"]
-            dlg = wx.TextEntryDialog(
-                self, 'Change the name?',
-                'Edit a game', '?')
-            dlg.SetValue(self.listed_game)
+        current_details = self.games_dict[self.current_game]
+        with wx.TextEntryDialog(self, 'Change the name?', 'Edit a game', value=current_details['Game']) as dlg:
             if dlg.ShowModal() == wx.ID_OK:
-                # self.log.WriteText('You entered: %s\n' % dlg.GetValue())
-                gamename_new = dlg.GetValue()
-
-                del self.games_dict[self.current_game]
-                new_index_for_game = str(uuid.uuid4())
-                # check that UID is not already in user (add later)
-
-                self.games_dict[new_index_for_game] = {'Game' : gamename_new,
-                                                 'Application': self.emulator_name,
-                                                 'Options': selectoption,
-                                                 'Notes': self.gamenotes.Value}
-                self.current_game = gamename_new
+                new_name = dlg.GetValue()
+                self.games_dict[self.current_game]['Game'] = new_name
                 self.filterthegames(True)
-
-            dlg.Destroy()
-        else:
-            wx.MessageBox(f"Nothing to edit",
-                          "Warning",
-                          wx.OK | wx.ICON_STOP | wx.CENTER)
 
     def deletegame(self, event):
+        if not self.current_game or self.current_game not in self.games_dict:
+            wx.MessageBox("Nothing to delete", "Warning", wx.OK | wx.ICON_STOP | wx.CENTER)
+            return
 
-        if self.current_game in self.games_dict.keys():
-
-            dlg = wx.MessageDialog(self, f'Do you really want to delete {self.listed_game}',
-                                   'Are you sure?',
-                                   # wx.OK | wx.ICON_INFORMATION
-                                   wx.OK | wx.CANCEL | wx.ICON_STOP
-                                   )
-            if dlg.ShowModal() == wx.ID_OK:
-                # self.log.WriteText('You entered: %s\n' % dlg.GetValue())
-
+        msg = f"Do you really want to delete '{self.games_dict[self.current_game]['Game']}'?"
+        with wx.MessageDialog(self, msg, 'Are you sure?', wx.YES_NO | wx.NO_DEFAULT | wx.ICON_QUESTION) as dlg:
+            if dlg.ShowModal() == wx.ID_YES:
                 del self.games_dict[self.current_game]
+                self.current_game = ''
                 self.filterthegames(True)
-            dlg.Destroy()
-        else:
-            wx.MessageBox(f"There are no games to delete",
-                          "Warning",
-                          wx.OK | wx.ICON_STOP | wx.CENTER)
 
     def addemu(self, event):
-        # Adds a record to the list using current view
-        #  'sdfsfsfsdfs': {'Application': 'DosBox', 'Options': 'stuff here sdsds'},
-        #
-        dlg = wx.TextEntryDialog(
-            self, 'Name of the Emulator is?',
-            'Add an emulator', '?')
-        # dlg.SetValue("Python is the best!")
-        if dlg.ShowModal() == wx.ID_OK:
-            # self.log.WriteText('You entered: %s\n' % dlg.GetValue())
-            emuname = dlg.GetValue()
-            if emuname not in self.emulator:
+        with wx.TextEntryDialog(self, 'Name of the Emulator?', 'Add an emulator') as name_dlg:
+            if name_dlg.ShowModal() != wx.ID_OK:
+                return
+            emuname = name_dlg.GetValue()
+            if emuname in self.emu_dict:
+                wx.MessageBox(f"The emulator '{emuname}' is already setup", "Warning", wx.OK | wx.ICON_STOP | wx.CENTER)
+                return
 
-                # self.games_dict['??'] = {'Application': emuname, 'Options': ''}
-                # current_game = '??'
-                dlg2 = wx.FileDialog(
-                    self, message="Select the emulator's executable",
-                    # defaultPath= os.getenv("USERPROFILE"),
-                    defaultDir=self.game_lib,
-                    style=wx.DD_DEFAULT_STYLE)
+        with wx.FileDialog(self, "Select the emulator's executable", defaultDir=self.game_lib,
+                           style=wx.FD_OPEN | wx.FD_FILE_MUST_EXIST) as exe_dlg:
+            if exe_dlg.ShowModal() != wx.ID_OK:
+                return
+            exe_path = exe_dlg.GetPath()
+            working_dir = exe_dlg.GetDirectory()
 
-                # Show the dialog and retrieve the user response.
-                if dlg2.ShowModal() == wx.ID_OK:
-                    # load directory
-                    path = dlg2.GetPath()
-                    self.dosbox_loc = path
-                    self.working_directory = dlg2.GetDirectory()
-                else:
-                    path = ''
-                # Destroy the dialog.
-                dlg2.Destroy()
+        with wx.DirDialog(self, "Select the emulator's default games directory", defaultPath=self.game_lib) as dir_dlg:
+            path2 = dir_dlg.GetPath() if dir_dlg.ShowModal() == wx.ID_OK else ''
 
-                dlg3 = wx.DirDialog(
-                    self, message="Select the emulator's default games directory",
-                    # defaultPath= os.getenv("USERPROFILE"),
-                    defaultPath=self.game_lib,
-                    style=wx.DD_DEFAULT_STYLE)
+        with wx.TextEntryDialog(self, 'Any default options to add to new games?', 'Default Options') as opt_dlg:
+            default_local = opt_dlg.GetValue() if opt_dlg.ShowModal() == wx.ID_OK else ""
 
-                # Show the dialog and retrieve the user response.
-                if dlg3.ShowModal() == wx.ID_OK:
-                    # load directory
-                    path2 = dlg3.GetPath()
-                else:
-                    path2 = ''
-                # Destroy the dialog.
-                dlg3.Destroy()
-
-                dlg4 = wx.TextEntryDialog(
-                    self, 'Any default option to add?',
-                    'will be added to the option', '?')
-                # dlg4.SetValue(self.default_option)
-                self.default_option = dlg4.GetValue()
-                if dlg4.ShowModal() == wx.ID_OK:
-                    default_local = dlg4.GetValue()
-                    dlg4.Destroy()
-                else:
-                    default_local = ""
-
-                # Add the new emulator to the dictionary
-                self.emu_dict[emuname] = {'Location': '"' + path + '"',
-                                          'Library_default': path2,
-                                          'Default_option': default_local,
-                                          'Working_Directory': self.working_directory}
-                self.game_lib = path2
-                # Update the combo box to have the new emulator added and selected
-                self.emulator = list(self.emu_dict.keys())
-                self.choice_of_emu.Clear()
-                self.emulator.sort()
-                z = 0
-                for y in self.emulator:
-                    self.choice_of_emu.Append(y)
-                    if y == emuname:
-                        self.choice_of_emu.SetSelection(z)
-                    z = z + 1
-                self.choice_of_emu.Refresh()
-                self.emulator_name = emuname
-                self.filterthegames(True)
-            else:
-                wx.MessageBox(f"The emulator {emuname} is already setup",
-                              "Warning",
-                              wx.OK | wx.ICON_STOP | wx.CENTER)
-        dlg.Destroy()
+        self.emu_dict[emuname] = {
+            'Location': f'"{exe_path}"',
+            'Library_default': path2,
+            'Default_option': default_local,
+            'Working_Directory': working_dir
+        }
+        self.emulator = sorted(list(self.emu_dict.keys()))
+        self.choice_of_emu.SetItems(self.emulator)
+        self.choice_of_emu.SetStringSelection(emuname)
+        self.emulator_name = emuname
+        self.filterthegames(True)
 
     def editemu(self, event):
-        if len(self.emulator) > 0:
-            emuselected_index = self.choice_of_emu.GetSelection()
-            self.emulator_name = self.emulator[emuselected_index]
-            dlg = wx.TextEntryDialog(
-                self, 'Change the name of the emulator?',
-                'Edit emulator', '?')
-            dlg.SetValue(self.emulator_name)
-            if dlg.ShowModal() == wx.ID_OK:
-                # self.log.WriteText('You entered: %s\n' % dlg.GetValue())
-                emulator_name_new = dlg.GetValue()
-                # Ok to not change the name, so not check to see if it is already there
-                x = self.emu_dict[self.emulator_name]["Location"]
-                x = x.strip('"')
-                dlg2 = wx.FileDialog(
-                    self, message="Select the emulator's executable",
-                    # defaultPath= os.getenv("USERPROFILE"),
-                    defaultFile=x,
-                    style=wx.DD_DEFAULT_STYLE)
+        if not self.emulator_name:
+            return
 
-                # Show the dialog and retrieve the user response.
-                if dlg2.ShowModal() == wx.ID_OK:
-                    # load directory
-                    path = dlg2.GetPath()
-                    self.dosbox_loc = path
-                    self.working_directory = dlg2.GetDirectory()
-                else:
-                    path = ''
-                # Destroy the dialog.
-                dlg2.Destroy()
+        with wx.TextEntryDialog(self, 'Change the name of the emulator?', 'Edit emulator', value=self.emulator_name) as name_dlg:
+            if name_dlg.ShowModal() != wx.ID_OK:
+                return
+            new_emuname = name_dlg.GetValue()
 
-                dlg3 = wx.DirDialog(
-                    self, message="Select the emulator's default games directory",
-                    # defaultPath= os.getenv("USERPROFILE"),
-                    defaultPath=self.game_lib,
-                    style=wx.DD_DEFAULT_STYLE)
+        current_exe = self.emu_dict[self.emulator_name]["Location"].strip('"')
+        with wx.FileDialog(self, "Select the emulator's executable", defaultFile=current_exe) as exe_dlg:
+            if exe_dlg.ShowModal() == wx.ID_OK:
+                exe_path = exe_dlg.GetPath()
+                working_dir = exe_dlg.GetDirectory()
+            else:
+                exe_path = current_exe
+                working_dir = self.emu_dict[self.emulator_name]['Working_Directory']
 
-                # Show the dialog and retrieve the user response.
-                if dlg3.ShowModal() == wx.ID_OK:
-                    # load directory
-                    path2 = dlg3.GetPath()
-                else:
-                    path2 = ''
-                # Destroy the dialog.
-                dlg3.Destroy()
+        current_lib = self.emu_dict[self.emulator_name]['Library_default']
+        with wx.DirDialog(self, "Select the emulator's default games directory", defaultPath=current_lib) as dir_dlg:
+            lib_path = dir_dlg.GetPath() if dir_dlg.ShowModal() == wx.ID_OK else current_lib
 
-                dlg4 = wx.TextEntryDialog(
-                    self, 'Any default option to add?',
-                    'will be added to the option', '?')
-                # dlg4.SetValue(self.default_option)
-                self.default_option = dlg4.GetValue()
-                if dlg4.ShowModal() == wx.ID_OK:
-                    default_local = dlg4.GetValue()
-                    dlg4.Destroy()
-                else:
-                    default_local = ""
+        current_opt = self.emu_dict[self.emulator_name]['Default_option']
+        with wx.TextEntryDialog(self, 'Default options?', 'Edit Options', value=current_opt) as opt_dlg:
+            opt_val = opt_dlg.GetValue() if opt_dlg.ShowModal() == wx.ID_OK else current_opt
 
-                # Add the new emulator to the dictionary
-                # Although the option is 'amend', it will delete and re-create it from emu dictionary
-                # If you cancel selecting the file locations, they remain as before
-                if not path:
-                    path = self.emu_dict[self.emulator_name]["Location"]
-                if not path2:
-                    path2 = self.emu_dict[self.emulator_name]["Library_default"]
-                self.game_lib = path2
-                # Deletes the details with the old name
-                del self.emu_dict[self.emulator_name]
-                # Adds it with the new name
-                self.emu_dict[emulator_name_new] = {'Location': path,
-                                                    'Library_default': path2,
-                                                    'Default_option': default_local,
-                                                    'Working_Directory': self.working_directory}
-                # emulator hold a list of the emulators, needs to be refreshed
-                self.emulator = list(self.emu_dict.keys())
-                # Uses the filtered list of games to change the relevant games dictionary to the new emulator name
-                for x in self.filtered_game_list:
-                    y = self.game_index_dict[x]
-                    self.games_dict[y]["Application"] = emulator_name_new
-                # Updates the comb box with the new list of emulator and selects the amended one
-                self.choice_of_emu.Clear()
-                self.emulator.sort()
-                z = 0
-                for y in self.emulator:
-                    self.choice_of_emu.Append(y)
-                    if y == emulator_name_new:
-                        self.choice_of_emu.SetSelection(z)
-                    z = z + 1
-                self.choice_of_emu.Refresh()
-                self.emulator_name = emulator_name_new
-                self.filterthegames(True)
-            dlg.Destroy()
-        else:
-            wx.MessageBox(f"Add emulator to edit",
-                          "Warning",
-                          wx.OK | wx.ICON_STOP | wx.CENTER)
+        # Update all games associated with this emulator if name changed
+        if new_emuname != self.emulator_name:
+            for game_id in self.games_dict:
+                if self.games_dict[game_id]['Application'] == self.emulator_name:
+                    self.games_dict[game_id]['Application'] = new_emuname
+            self.emu_dict[new_emuname] = self.emu_dict.pop(self.emulator_name)
+
+        self.emu_dict[new_emuname].update({
+            'Location': f'"{exe_path}"',
+            'Library_default': lib_path,
+            'Default_option': opt_val,
+            'Working_Directory': working_dir
+        })
+        
+        self.emulator = sorted(list(self.emu_dict.keys()))
+        self.choice_of_emu.SetItems(self.emulator)
+        self.choice_of_emu.SetStringSelection(new_emuname)
+        self.emulator_name = new_emuname
+        self.filterthegames(True)
 
     def deleteemu(self, event):
+        if not self.emulator_name:
+            return
 
-        # Test to check this is not the last emulator
-        if len(self.emulator) > 0:
-            emuselected_index = self.choice_of_emu.GetSelection()
-            self.emulator_name = self.emulator[emuselected_index]
-
-            dlg = wx.MessageDialog(self, f'Do you really want to delete {self.emulator_name}',
-                                   'Are you sure? (all game set up info goes with it)',
-                                   # wx.OK | wx.ICON_INFORMATION
-                                   wx.OK | wx.CANCEL | wx.ICON_STOP
-                                   )
-            if dlg.ShowModal() == wx.ID_OK:
-                # deletes the emulator from the emu dictionary
+        msg = f"Delete '{self.emulator_name}' and ALL its games?"
+        with wx.MessageDialog(self, msg, 'Are you sure?', wx.YES_NO | wx.NO_DEFAULT | wx.ICON_STOP) as dlg:
+            if dlg.ShowModal() == wx.ID_YES:
+                # Remove games
+                games_to_del = [gid for gid, details in self.games_dict.items() if details['Application'] == self.emulator_name]
+                for gid in games_to_del:
+                    del self.games_dict[gid]
+                
                 del self.emu_dict[self.emulator_name]
-                # Steps through the games and removes any related to the emulator from the dictionary
-                for x in self.filtered_game_list:
-                    y = self.game_index_dict[x]
-                    del self.games_dict[y]
-                # Updates the comb box with the list of emulators remaining
-                self.choice_of_emu.Clear()
-                self.emulator.remove(self.emulator_name)
-                self.emulator.sort()
-                for y in self.emulator:
-                    self.choice_of_emu.Append(y)
-                # picks the first emulator to refresh the screen
-                if len(self.emulator) > 0:
-                    self.choice_of_emu.SetSelection(0)
-                    self.choice_of_emu.Refresh()
+                self.emulator = sorted(list(self.emu_dict.keys()))
+                self.choice_of_emu.SetItems(self.emulator)
+                if self.emulator:
                     self.emulator_name = self.emulator[0]
+                    self.choice_of_emu.SetStringSelection(self.emulator_name)
+                else:
+                    self.emulator_name = ""
+                    self.choice_of_emu.SetValue("")
                 self.filterthegames(True)
-            dlg.Destroy()
-        else:
-            wx.MessageBox("This is no emulator to delete..",
-                          "Warning",
-                          wx.OK | wx.ICON_STOP | wx.CENTER)
 
     def onfileopen(self, event):
-        # wx.MessageBox("Hello OnfileOpen")
-        """Open a file"""
-        # if wx.Platform == '__WXMSW__':
-        #    path = os.getenv("USERPROFILE")
-        # show dir dialog
-        if len(self.filtered_game_list) > 0:
-            select_index = self.my_list.GetSelection()
-            self.current_game = self.choice_of_games[select_index]
+        """Add a file path to the current game's options"""
+        if not self.current_game or self.current_game not in self.games_dict:
+            wx.MessageBox("No game selected.", "Warning", wx.OK | wx.ICON_STOP | wx.CENTER)
+            return
 
-            dlg = wx.FileDialog(
-                self, message="Select game executable",
-                # defaultPath= os.getenv("USERPROFILE"),
-                defaultDir=self.game_lib,
-                style=wx.DD_DEFAULT_STYLE)
-
-            # Show the dialog and retrieve the user response.
+        with wx.FileDialog(self, "Select file to add to options", defaultDir=self.game_lib,
+                           style=wx.FD_OPEN | wx.FD_FILE_MUST_EXIST) as dlg:
             if dlg.ShowModal() == wx.ID_OK:
-                # load directory
                 path = dlg.GetPath()
-                options_before = self.games_dict[self.current_game]["Options"]
-                self.games_dict[self.current_game]["Options"] = options_before + ' "' + path + '" '
-                self.on_clk(select_index)
-            else:
-                path = ''
-                # Destroy the dialog.
-                dlg.Destroy()
-            # Update the options
-
-            return path
-
-        else:
-            wx.MessageBox(f"There is no game setup",
-                          "Warning",
-                          wx.OK | wx.ICON_STOP | wx.CENTER)
+                current_options = self.games_dict[self.current_game]["Options"]
+                self.games_dict[self.current_game]["Options"] = f'{current_options} "{path}"'
+                self.on_clk(None)
 
     def run_game(self, event):
-        value = self.emu_location.GetValue()
+        emu_path = self.emu_location.GetValue()
+        if not emu_path:
+            wx.MessageBox("No emulator executable selected.", "Error", wx.OK | wx.ICON_ERROR)
+            return
+
         if len(self.filtered_game_list) > 0:
             select_index = self.my_list.GetSelection()
-            #self.current_game = self.choice_of_games[select_index]
+            if select_index == wx.NOT_FOUND:
+                wx.MessageBox("Please select a game to play.", "Info", wx.OK | wx.ICON_INFORMATION)
+                return
+
             self.listed_game = self.choice_of_games[select_index]
             self.current_game = self.game_index_dict[self.listed_game]
-            doscmd = value + ' ' + self.games_dict[self.current_game]["Options"]
-            # opt = self.games_dict[self.current_game]["Options"]
-            # test = value + ',' + self.games_dict[current_game]["Options"]
-            # subprocess.run([doscmd, '-conf', 'E:\\Dos\\dosboxconf\\doom2-0.74-3.conf', opt])
-            # old method
-            # subprocess.run(doscmd)
-            # New method allows a change of working directory needed for application
-            subprocess.Popen(doscmd, cwd=self.working_directory)
-            # subprocess.run('"E:\\Program Files (x86)\\DOSBox-0.74-3\\DOSBox.exe"
-            # -conf "E:\\Dos\\dosboxconf\\doom2-0.74-3.conf" "E:\Dos\DosGames\DOOM2\DOOM2.EXE"')
+            options = self.games_dict[self.current_game]["Options"]
+            
+            # Simple command construction. 
+            doscmd = f"\"{emu_path}\" {options}"
+            
+            try:
+                subprocess.Popen(doscmd, cwd=self.working_directory, shell=True)
+            except Exception as e:
+                wx.MessageBox(f"Failed to start game: {e}", "Error", wx.OK | wx.ICON_ERROR)
         else:
-            wx.MessageBox(f"The emulator {value} hasn't got any games set up",
+            wx.MessageBox(f"The emulator hasn't got any games set up",
                           "Warning",
                           wx.OK | wx.ICON_STOP | wx.CENTER)
 
     def on_doubleclk(self, event):
-        #select_index = self.my_list.GetSelection()
-        #self.current_game = self.choice_of_games[select_index]
-        #self.listed_game = self.choice_of_games[select_index]
-        #self.current_game = self.game_index_dict[self.listed_game]
-
-        #self.run_game(self.current_game)
-        self.run_game(self.current_game)
+        self.run_game(None)
 
     # Needs to be called if you want to change focus to a different game to update the screen
     def on_clk(self, event):
         select_index = self.my_list.GetSelection()
-        #select_index = self.game_index_dict[select_index]
+        if select_index == wx.NOT_FOUND:
+            return
 
         self.listed_game = self.choice_of_games[select_index]
         self.current_game = self.game_index_dict[self.listed_game]
 
-
         # update items related to what has been selected
-        # Update details for options
-        # self.param_1_type.SetValue(self.games_dict[current_game]['Application'])
         self.runoptions.SetValue(self.games_dict[self.current_game]['Options'])
         self.gamenotes.SetValue(self.games_dict[self.current_game]['Notes'])
-        #cmd = self.dosbox_loc + ' ' + self.games_dict[self.current_game]['Options']
-        #self.cmdstring.SetValue(cmd)
-        self.cmdstring.SetValue(self.dosbox_loc + ' ' + self.games_dict[self.current_game]['Options'])
+        self.cmdstring.SetValue('\"' + self.dosbox_loc + '\" ' + self.games_dict[self.current_game]['Options'])
 
     def filterchange(self, event):
-        emuselected_index = self.choice_of_emu.GetSelection()
-        self.emulator_name = self.emulator[emuselected_index]
+        self.emulator_name = self.choice_of_emu.GetStringSelection()
         self.filterthegames(False)
 
     # This def needs to be called when the emulator or details about it change
     # It updates the global variables used
     def filterthegames(self, save_or_not):
-        # Filter the main games list (only show games for this emulator)
-        # What happens if nothing selected..
-        # Identify which emulator is selected
-        # select_index = self.my_list.GetSelection()
-        # current_game = self.choice_of_games[select_index]
-        # emuselected_index = self.choice_of_emu.GetSelection()
-        # Only does anything if there is at least one emulator set up (Otherwise no point)
-        if len(self.emulator) > 0:
+        if self.emulator:
+            if save_or_not:
+                self.data_manager.save_data()
 
-            # If filterthegames was called with save_or_not being true we need to update the json files
-            # saved to our profile.
-            if save_or_not is True:
-                # using indent=4 makes it more human readable
-                with open(self.emu_file, 'w') as ef:
-                    json.dump(self.emu_dict, ef, indent=4)
-                with open(self.game_file, 'w') as gf:
-                    json.dump(self.games_dict, gf, indent=4)
-            emuselected_index = self.emulator.index(self.emulator_name)
-            self.emulator_name = self.emulator[emuselected_index]
+            if self.emulator_name not in self.emu_dict:
+                if self.emulator:
+                    self.emulator_name = self.emulator[0]
+                else:
+                    self.emulator_name = ""
 
-            # When the emulator is changed you need to update the dialogue and global variables used elsewhere
-            self.emu_location.SetValue(self.emu_dict[self.emulator[emuselected_index]]['Location'])
-            self.dosbox_loc = self.emu_dict[self.emulator[emuselected_index]]['Location']
-            self.game_location.SetValue(self.emu_dict[self.emulator[emuselected_index]]['Library_default'])
-            self.game_lib = self.emu_dict[self.emulator[emuselected_index]]['Library_default']
-            self.default.SetValue(self.emu_dict[self.emulator[emuselected_index]]['Default_option'])
-            self.default_option = self.emu_dict[self.emulator[emuselected_index]]['Default_option']
-            self.cwd.SetValue(self.emu_dict[self.emulator[emuselected_index]]['Working_Directory'])
-            self.working_directory = self.emu_dict[self.emulator[emuselected_index]]['Working_Directory']
-
-            # Saving the data to disk
-
+            if self.emulator_name:
+                emu_data = self.emu_dict[self.emulator_name]
+                self.emu_location.SetValue(emu_data['Location'])
+                self.dosbox_loc = emu_data['Location']
+                self.game_location.SetValue(emu_data['Library_default'])
+                self.game_lib = emu_data['Library_default']
+                self.default.SetValue(emu_data['Default_option'])
+                self.default_option = emu_data['Default_option']
+                self.cwd.SetValue(emu_data['Working_Directory'])
+                self.working_directory = emu_data['Working_Directory']
         else:
             self.emu_location.SetValue('')
             self.game_location.SetValue('')
@@ -754,55 +481,51 @@ class MyFrame(wx.Frame):
 
         self.filtered_game_list = []
         self.game_index_dict = {}
-        for x in self.games_dict.keys():
-            if self.games_dict[x]['Application'] == self.emulator_name:
-                self.filtered_game_list.append(self.games_dict[x]['Game'])
-                self.game_index_dict.update({self.games_dict[x]['Game'] : x })
+        for x, details in self.games_dict.items():
+            if details['Application'] == self.emulator_name:
+                game_name = details['Game']
+                self.filtered_game_list.append(game_name)
+                self.game_index_dict[game_name] = x
         self.filtered_game_list.sort()
 
-        if self.current_game in self.filtered_game_list:
-            current_selection = self.filtered_game_list.index(self.current_game)
-        else:
-            current_selection = 0
         self.choice_of_games = self.filtered_game_list
         self.my_list.Set(self.choice_of_games)
 
-        # Assumption is that the first game on the list should be selected after calling this.
-        # what happens if there is not one there??
-        # self.on_clk(current_game)
-        if len(self.filtered_game_list) > 0:
+        if self.filtered_game_list:
+            # Try to maintain selection or pick first
+            try:
+                # Find by name if possible
+                current_game_name = self.games_dict.get(self.current_game, {}).get('Game', '')
+                if current_game_name in self.filtered_game_list:
+                    current_selection = self.filtered_game_list.index(current_game_name)
+                else:
+                    current_selection = 0
+            except Exception:
+                current_selection = 0
+            
             self.my_list.SetSelection(current_selection)
-            self.on_clk(self.current_game)
+            self.on_clk(None)
         else:
             self.runoptions.SetValue('')
             self.gamenotes.SetValue('')
-            # cmd = dosbox_loc
             self.cmdstring.SetValue('')
 
     # ----------------------------------------------------------------------
 
     def onedit(self, event):
-        # selectoption_before = self.games_dict[current_game]["Options"]
         if len(self.filtered_game_list) > 0:
-            updated = self.runoptions.Value
-            updatednotes = self.gamenotes.Value
-            self.games_dict[self.current_game]["Options"] = updated
-            self.games_dict[self.current_game]["Notes"] = updatednotes
+            if self.current_game not in self.games_dict:
+                return
+            
+            self.games_dict[self.current_game]["Options"] = self.runoptions.GetValue()
+            self.games_dict[self.current_game]["Notes"] = self.gamenotes.GetValue()
+            
             self.cmdstring.SetValue(self.dosbox_loc + ' ' + self.games_dict[self.current_game]['Options'])
-            #self.filterthegames(True)
-            #self.current_game = self.game_index_dict[self.current_game]
-            dlg = wx.MessageDialog(self, f'Option updated for {self.listed_game}',
-                                   'Done',
-                                   # wx.OK | wx.ICON_INFORMATION
-                                   wx.OK | wx.ICON_INFORMATION
-                                   )
-            if dlg.ShowModal() == wx.ID_OK:
-                dlg.Destroy()
+            self.data_manager.save_data()
+            
+            wx.MessageBox(f'Details updated for {self.listed_game}', 'Done', wx.OK | wx.ICON_INFORMATION)
         else:
-            wx.MessageBox("There are no games set up yet..",
-                          "Warning",
-                          wx.OK | wx.ICON_STOP | wx.CENTER)
-
+            wx.MessageBox("There are no games set up yet..", "Warning", wx.OK | wx.ICON_STOP | wx.CENTER)
 
 def main():
     app = wx.App()
